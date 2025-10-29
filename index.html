@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>語彙力テスト（教師用）</title>
+<style>
+body { font-family: sans-serif; text-align: center; background: #f5f5f5; margin:0; padding:20px;}
+h1 { color:#333; }
+textarea { width:80%; height:150px; margin:10px; }
+input, button, select { padding:10px; margin:5px; font-size:1em; }
+.unit-list { margin-top:20px; }
+</style>
+</head>
+<body>
+<h1>語彙力テスト（教師用）</h1>
+
+<p>単語を <code>apple=りんご</code> の形式で1行ずつ入力してください<br>
+（左が英語、右が日本語）</p>
+
+<textarea id="wordInput" placeholder="英語=日本語 を1行ずつ入力"></textarea><br>
+<input type="text" id="unitName" placeholder="単元名を入力">
+<button onclick="saveUnit()">単元を保存</button>
+
+<div class="unit-list">
+<h3>登録済みの単元</h3>
+<select id="unitSelect"></select>
+<button onclick="deleteUnit()">削除</button>
+<button onclick="downloadStudentPage()">生徒用ページ生成</button>
+</div>
+
+<script>
+function loadUnits() {
+    const units = JSON.parse(localStorage.getItem("units")||"{}");
+    const select = document.getElementById("unitSelect");
+    select.innerHTML="";
+    Object.keys(units).forEach(u=>{
+        const opt=document.createElement("option");
+        opt.value=u;
+        opt.textContent=u;
+        select.appendChild(opt);
+    });
+}
+
+function saveUnit(){
+    const name=document.getElementById("unitName").value.trim();
+    const data=document.getElementById("wordInput").value.trim().split("\n");
+    if(!name || data.length===0){ alert("単元名と単語リストを入力してください"); return;}
+    const obj={};
+    data.forEach(line=>{
+        const [word, meaning]=line.split("=");
+        if(word && meaning) obj[word.trim()]=meaning.trim();
+    });
+    const units=JSON.parse(localStorage.getItem("units")||"{}");
+    units[name]=obj;
+    localStorage.setItem("units", JSON.stringify(units));
+    alert(`単元「${name}」を保存しました！`);
+    document.getElementById("unitName").value="";
+    document.getElementById("wordInput").value="";
+    loadUnits();
+}
+
+function deleteUnit(){
+    const select=document.getElementById("unitSelect");
+    const name=select.value;
+    if(!name) return alert("削除する単元を選んでください");
+    if(!confirm(`「${name}」を削除しますか？`)) return;
+    const units=JSON.parse(localStorage.getItem("units")||"{}");
+    delete units[name];
+    localStorage.setItem("units", JSON.stringify(units));
+    loadUnits();
+}
+
+function downloadStudentPage(){
+    const units=JSON.parse(localStorage.getItem("units")||"{}");
+    const blob=new Blob([`<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>語彙力テスト（生徒用）</title>
+<style>
+body{font-family:sans-serif;text-align:center;background:#fffef5;margin:0;padding:20px;}
+h1{color:#333;}
+.hidden{display:none;}
+input,button,select{padding:10px;margin:5px;font-size:1em;}
+#wrongWords li{list-style:none;margin:4px;}
+</style>
+</head>
+<body>
+<h1>語彙力テスト（生徒用）</h1>
+<div id="unitArea">
+<select id="unitSelect"></select>
+<button onclick="startQuiz()">テスト開始</button>
+</div>
+<div id="testArea" class="hidden">
+<h3 id="quizWord"></h3>
+<input type="text" id="answer" placeholder="英語を入力">
+<button onclick="checkAnswer()">答える</button>
+<button onclick="endQuiz()">終了</button>
+<p id="result"></p>
+</div>
+<div id="wrongList" class="hidden">
+<h3>間違えた単語一覧</h3>
+<ul id="wrongWords"></ul>
+<button onclick="restartQuiz()">もう一度テストする</button>
+</div>
+<script>
+const units=${JSON.stringify(units)};
+let quizWords=[],currentWord=null,wrongAnswers=[],currentUnit=null;
+
+function setupUnits(){
+    const select=document.getElementById("unitSelect");
+    select.innerHTML="";
+    Object.keys(units).forEach(u=>{
+        const opt=document.createElement("option");
+        opt.value=u;
+        opt.textContent=u;
+        select.appendChild(opt);
+    });
+}
+
+function startQuiz(){
+    const select=document.getElementById("unitSelect");
+    const unit=select.value;
+    if(!unit){alert("単元を選んでください"); return;}
+    currentUnit=unit;
+    quizWords=Object.entries(units[unit]);
+    wrongAnswers=[];
+    document.getElementById("unitArea").classList.add("hidden");
+    document.getElementById("testArea").classList.remove("hidden");
+    document.getElementById("wrongList").classList.add("hidden");
+    nextQuestion();
+}
+
+function nextQuestion(){
+    if(quizWords.length===0){showWrongList();return;}
+    const idx=Math.floor(Math.random()*quizWords.length);
+    currentWord=quizWords.splice(idx,1)[0];
+    document.getElementById("quizWord").innerText=currentWord[1];
+    const input=document.getElementById("answer");
+    input.value="";
+    input.focus();
+}
+
+document.getElementById("answer").addEventListener("keydown",e=>{
+    if(e.key==="Enter") checkAnswer();
+});
+
+function checkAnswer(){
+    const userAnswer=document.getElementById("answer").value.trim();
+    if(userAnswer===""){nextQuestion(); return;}
+    const correctAnswer=currentWord[0];
+    const result=document.getElementById("result");
+    if(userAnswer.toLowerCase()===correctAnswer.toLowerCase()){
+        result.innerText="⭕ 正解！";
+    }else{
+        result.innerText=\`❌ 不正解（正答：\${correctAnswer}）\`;
+        wrongAnswers.push({word:currentWord[1],answer:correctAnswer});
+    }
+    setTimeout(()=>{result.innerText=""; nextQuestion();},500);
+}
+
+function endQuiz(){showWrongList();}
+
+function showWrongList(){
+    document.getElementById("testArea").classList.add("hidden");
+    document.getElementById("wrongList").classList.remove("hidden");
+    const list=document.getElementById("wrongWords");
+    list.innerHTML="";
+    if(wrongAnswers.length===0) list.innerHTML="<li>間違いはありません！</li>";
+    else wrongAnswers.forEach(item=>{
+        const li=document.createElement("li");
+        li.textContent=\`\${item.word} → \${item.answer}\`;
+        list.appendChild(li);
+    });
+}
+
+function restartQuiz(){
+    document.getElementById("wrongList").classList.add("hidden");
+    document.getElementById("unitArea").classList.remove("hidden");
+}
+
+setupUnits();
+</script>
+</body>
+</html>`],{type:"text/html"});
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(blob);
+    a.download="student.html";
+    a.click();
+    alert("生徒用ページをダウンロードしました！");
+}
+
+loadUnits();
+</script>
+</body>
+</html>
